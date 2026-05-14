@@ -87,7 +87,58 @@
   --shadow-modal: 0 16px 48px rgba(0,0,0,0.2);
 }
 
-/* ===== 리셋 & 베이스 ===== */
+/* ===== 커스텀 스크롤바 ===== */
+
+/* 다크 모드 기본 */
+:root {
+  --sb-track: #0d0d0f;
+  --sb-thumb: #3a3a4a;
+  --sb-thumb-hover: #5a5a72;
+  --sb-corner: #0d0d0f;
+}
+
+/* 라이트 모드 */
+[data-theme="light"] {
+  --sb-track: #e8eaf0;
+  --sb-thumb: #b0b8cc;
+  --sb-thumb-hover: #8892a4;
+  --sb-corner: #e8eaf0;
+}
+
+/* Webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sb-track);
+}
+::-webkit-scrollbar-track-piece {
+  background: var(--sb-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb);
+  border-radius: 999px;
+  min-height: 40px;
+  transition: background 0.2s;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--sb-thumb-hover);
+}
+::-webkit-scrollbar-corner {
+  background: var(--sb-corner);
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
