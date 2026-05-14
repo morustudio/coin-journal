@@ -617,7 +617,28 @@ body.modal-open { overflow: hidden; }
   line-height: 1.6;
 }
 
-/* ===== 손익 분해 박스 ===== */
+/* ===== 드래그 앤 드롭 ===== */
+.drag-handle {
+  cursor: grab;
+  text-align: center;
+  padding: 10px 4px !important;
+  color: var(--text-muted);
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+.drag-handle:active { cursor: grabbing; }
+.drag-handle svg { display: block; margin: auto; }
+
+tr.dragging {
+  opacity: 0.4;
+  background: var(--bg-table-hover) !important;
+}
+tr.drag-over {
+  border-top: 2px solid var(--accent) !important;
+  background: rgba(59,130,246,0.08) !important;
+}
+tr.drag-over td { border-top: 2px solid var(--accent); }
 .pnl-breakdown-box {
   background: var(--bg-input);
   border: 1px solid var(--border);

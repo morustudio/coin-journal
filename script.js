@@ -31,7 +31,7 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
   var COLS = ['id','date','symbol','side','leverage',
     'avgEntry','exitPrice','quantity','fee','tp','sl',
     'realizedPnl','pnl','pnlPercent',
-    'reason','exitReason','lesson','createdAt'];
+    'reason','exitReason','lesson','createdAt','order'];
 
   if (data.action === 'save') {
     sheet.clearContents();
@@ -460,29 +460,47 @@ function entriesInWindow() {
 
 /* ===== 테이블 렌더 ===== */
 function renderTable() {
-  const rows = entriesInWindow().slice().sort((a,b) => b.createdAt - a.createdAt);
+  // order 필드 기준 정렬 (없으면 createdAt 기준)
+  const rows = entriesInWindow().slice().sort((a, b) => {
+    // 날짜 내림차순
+    const dateA = a.date || '';
+    const dateB = b.date || '';
+    if (dateA !== dateB) return dateB.localeCompare(dateA);
+    // 같은 날짜면 order 오름차순 (없으면 createdAt)
+    const oA = a.order !== undefined ? a.order : a.createdAt;
+    const oB = b.order !== undefined ? b.order : b.createdAt;
+    return oA - oB;
+  });
+
   tableBody.innerHTML = '';
   emptyState.style.display = rows.length ? 'none' : 'block';
+
   rows.forEach(entry => {
     const tr = document.createElement('tr');
-    tr.dataset.id = entry.id;
+    tr.dataset.id   = entry.id;
+    tr.dataset.date = entry.date || '';
+    tr.draggable    = true;
+
     const pnlNum   = parseFloat(entry.pnl || 0);
     const realNum  = parseFloat(entry.realizedPnl || 0);
-    const feeNum   = parseFloat(entry.fee || 0);
     const pnlClass = pnlNum > 0 ? 'pnl-positive' : pnlNum < 0 ? 'pnl-negative' : 'pnl-zero';
     const sideTag  = entry.side === 'SHORT'
       ? '<span class="tag-short">SHORT</span>'
       : '<span class="tag-long">LONG</span>';
-    const lv = entry.leverage ? `${entry.leverage}x` : '-';
+    const lv   = entry.leverage ? `${entry.leverage}x` : '-';
     const sign = n => n >= 0 ? '+' : '';
 
-    // 손익 표시: 최종손익 + 분해 (실현/수수료)
     const pnlDisplay = entry.pnl
       ? `<span class="${pnlClass}">${sign(pnlNum)}${fmt2(entry.pnl)}</span>
          ${(entry.realizedPnl || entry.fee) ? `<div class="pnl-sub">${entry.realizedPnl ? `실현 ${sign(realNum)}${fmt2(entry.realizedPnl)}` : ''}${entry.fee ? ` / 수수료 -${fmt2(entry.fee)}` : ''}</div>` : ''}`
       : '-';
 
     tr.innerHTML = `
+      <td class="drag-handle" title="드래그로 같은 날짜 내 순서 변경">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.35">
+          <path d="M9 3h2v2H9zm4 0h2v2h-2zM9 7h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 15h2v2H9zm4 0h2v2h-2zM9 19h2v2H9zm4 0h2v2h-2z"/>
+        </svg>
+      </td>
       <td>${entry.date || ''}</td>
       <td><b>${entry.symbol || ''}</b></td>
       <td>${sideTag}</td>
@@ -495,9 +513,159 @@ function renderTable() {
     `;
     tableBody.appendChild(tr);
   });
+
+  initDragDrop();
 }
 
-/* ===== 차트 & 통계 ===== */
+/* ===== 드래그 앤 드롭 (같은 날짜 내에서만) ===== */
+function initDragDrop() {
+  let dragSrc  = null;
+  let dragDate = null;
+
+  // 드래그 핸들 셀에서만 드래그 시작
+  tableBody.querySelectorAll('tr').forEach(tr => {
+    const handle = tr.querySelector('.drag-handle');
+
+    // 데스크탑 — 핸들 mousedown 시 draggable 활성
+    handle.addEventListener('mousedown', () => { tr.draggable = true; });
+    tr.addEventListener('dragend', () => { tr.draggable = false; });
+
+    tr.addEventListener('dragstart', e => {
+      dragSrc  = tr;
+      dragDate = tr.dataset.date;
+      tr.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    tr.addEventListener('dragend', () => {
+      dragSrc = null;
+      dragDate = null;
+      tableBody.querySelectorAll('tr').forEach(r => {
+        r.classList.remove('dragging', 'drag-over');
+      });
+    });
+
+    tr.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragSrc || tr === dragSrc) return;
+      // 같은 날짜인지 확인
+      if (tr.dataset.date !== dragDate) {
+        e.dataTransfer.dropEffect = 'none';
+        return;
+      }
+      e.dataTransfer.dropEffect = 'move';
+      tr.classList.add('drag-over');
+    });
+
+    tr.addEventListener('dragleave', () => {
+      tr.classList.remove('drag-over');
+    });
+
+    tr.addEventListener('drop', e => {
+      e.preventDefault();
+      tr.classList.remove('drag-over');
+      if (!dragSrc || tr === dragSrc) return;
+      if (tr.dataset.date !== dragDate) return;
+
+      // DOM 순서 변경
+      const allRows = [...tableBody.querySelectorAll('tr')];
+      const srcIdx  = allRows.indexOf(dragSrc);
+      const tgtIdx  = allRows.indexOf(tr);
+      if (srcIdx < tgtIdx) {
+        tableBody.insertBefore(dragSrc, tr.nextSibling);
+      } else {
+        tableBody.insertBefore(dragSrc, tr);
+      }
+
+      // order 값 갱신 — 같은 날짜 그룹의 새 순서를 entries에 반영
+      applyNewOrder();
+    });
+
+    // 모바일 터치 드래그
+    let touchClone = null;
+    let touchSrc   = null;
+    let touchDate  = null;
+    let offsetX    = 0, offsetY = 0;
+
+    handle.addEventListener('touchstart', e => {
+      const touch  = e.touches[0];
+      touchSrc     = tr;
+      touchDate    = tr.dataset.date;
+      offsetX      = touch.clientX - tr.getBoundingClientRect().left;
+      offsetY      = touch.clientY - tr.getBoundingClientRect().top;
+
+      touchClone = tr.cloneNode(true);
+      touchClone.style.cssText = `
+        position:fixed; z-index:9999; opacity:0.85; pointer-events:none;
+        background:var(--bg-card); border:1px solid var(--border-focus);
+        border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.4);
+        width:${tr.offsetWidth}px;
+      `;
+      document.body.appendChild(touchClone);
+      tr.classList.add('dragging');
+      e.preventDefault();
+    }, { passive: false });
+
+    handle.addEventListener('touchmove', e => {
+      if (!touchSrc || !touchClone) return;
+      e.preventDefault();
+      const touch = e.touches[0];
+      touchClone.style.left = (touch.clientX - offsetX) + 'px';
+      touchClone.style.top  = (touch.clientY - offsetY) + 'px';
+
+      // 현재 위치 아래의 row 찾기
+      touchClone.style.display = 'none';
+      const el = document.elementFromPoint(touch.clientX, touch.clientY);
+      touchClone.style.display = '';
+      const targetRow = el?.closest('tr');
+
+      tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
+        targetRow.classList.add('drag-over');
+      }
+    }, { passive: false });
+
+    handle.addEventListener('touchend', e => {
+      if (!touchSrc || !touchClone) return;
+      touchClone.remove();
+      touchClone = null;
+      touchSrc.classList.remove('dragging');
+
+      const touch = e.changedTouches[0];
+      const el    = document.elementFromPoint(touch.clientX, touch.clientY);
+      const targetRow = el?.closest('tr');
+
+      tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+
+      if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
+        const allRows = [...tableBody.querySelectorAll('tr')];
+        const srcIdx  = allRows.indexOf(touchSrc);
+        const tgtIdx  = allRows.indexOf(targetRow);
+        if (srcIdx < tgtIdx) tableBody.insertBefore(touchSrc, targetRow.nextSibling);
+        else                  tableBody.insertBefore(touchSrc, targetRow);
+        applyNewOrder();
+      }
+
+      touchSrc  = null;
+      touchDate = null;
+    });
+  });
+}
+
+// DOM 순서를 entries의 order 필드에 반영 후 저장
+function applyNewOrder() {
+  const rows = [...tableBody.querySelectorAll('tr')];
+  // 날짜별로 order 부여
+  const dateOrderMap = {};
+  rows.forEach(tr => {
+    const date = tr.dataset.date;
+    if (!dateOrderMap[date]) dateOrderMap[date] = 0;
+    const id = Number(tr.dataset.id);
+    const entry = entries.find(e => e.id === id);
+    if (entry) entry.order = dateOrderMap[date]++;
+  });
+  saveEntries();
+}
 let lastChartGeom = null;
 function computeEquitySeries() {
   const startCash = Number(settings.startingCash) || 0;
@@ -815,6 +983,8 @@ document.getElementById('clear-all-btn').addEventListener('click', () => {
 
 /* ===== 모달 ===== */
 tableBody.addEventListener('click', e => {
+  // 드래그 핸들 클릭은 모달 열지 않음
+  if (e.target.closest('.drag-handle')) return;
   const tr = e.target.closest('tr');
   if (tr) openModal(Number(tr.dataset.id));
 });
@@ -929,7 +1099,7 @@ document.getElementById('modal-delete').addEventListener('click', () => {
 const CSV_HEADERS = ['id','createdAt','date','symbol','side','leverage',
   'avgEntry','exitPrice','quantity','fee','tp','sl',
   'realizedPnl','pnl','pnlPercent',
-  'reason','exitReason','lesson'];
+  'reason','exitReason','lesson','order'];
 
 document.getElementById('export-csv-btn').addEventListener('click', () => {
   const lines = [CSV_HEADERS.join(',')];
