@@ -460,13 +460,10 @@ function entriesInWindow() {
 
 /* ===== 테이블 렌더 ===== */
 function renderTable() {
-  // order 필드 기준 정렬 (없으면 createdAt 기준)
   const rows = entriesInWindow().slice().sort((a, b) => {
-    // 날짜 내림차순
     const dateA = a.date || '';
     const dateB = b.date || '';
     if (dateA !== dateB) return dateB.localeCompare(dateA);
-    // 같은 날짜면 order 오름차순 (없으면 createdAt)
     const oA = a.order !== undefined ? a.order : a.createdAt;
     const oB = b.order !== undefined ? b.order : b.createdAt;
     return oA - oB;
@@ -479,7 +476,7 @@ function renderTable() {
     const tr = document.createElement('tr');
     tr.dataset.id   = entry.id;
     tr.dataset.date = entry.date || '';
-    tr.draggable    = true;
+    // draggable은 핸들 mousedown 시 동적으로 설정
 
     const pnlNum   = parseFloat(entry.pnl || 0);
     const realNum  = parseFloat(entry.realizedPnl || 0);
@@ -513,144 +510,136 @@ function renderTable() {
     `;
     tableBody.appendChild(tr);
   });
-
-  initDragDrop();
 }
 
-/* ===== 드래그 앤 드롭 (같은 날짜 내에서만) ===== */
-function initDragDrop() {
+/* ===== 드래그 앤 드롭 — 이벤트 위임 방식 ===== */
+/* tableBody에 한 번만 등록, renderTable 재호출과 무관하게 동작 */
+(function initDragDrop() {
   let dragSrc  = null;
   let dragDate = null;
 
-  // 드래그 핸들 셀에서만 드래그 시작
-  tableBody.querySelectorAll('tr').forEach(tr => {
-    const handle = tr.querySelector('.drag-handle');
-
-    // 데스크탑 — 핸들 mousedown 시 draggable 활성
-    handle.addEventListener('mousedown', () => { tr.draggable = true; });
-    tr.addEventListener('dragend', () => { tr.draggable = false; });
-
-    tr.addEventListener('dragstart', e => {
-      dragSrc  = tr;
-      dragDate = tr.dataset.date;
-      tr.classList.add('dragging');
-      e.dataTransfer.effectAllowed = 'move';
-    });
-
-    tr.addEventListener('dragend', () => {
-      dragSrc = null;
-      dragDate = null;
-      tableBody.querySelectorAll('tr').forEach(r => {
-        r.classList.remove('dragging', 'drag-over');
-      });
-    });
-
-    tr.addEventListener('dragover', e => {
-      e.preventDefault();
-      if (!dragSrc || tr === dragSrc) return;
-      // 같은 날짜인지 확인
-      if (tr.dataset.date !== dragDate) {
-        e.dataTransfer.dropEffect = 'none';
-        return;
-      }
-      e.dataTransfer.dropEffect = 'move';
-      tr.classList.add('drag-over');
-    });
-
-    tr.addEventListener('dragleave', () => {
-      tr.classList.remove('drag-over');
-    });
-
-    tr.addEventListener('drop', e => {
-      e.preventDefault();
-      tr.classList.remove('drag-over');
-      if (!dragSrc || tr === dragSrc) return;
-      if (tr.dataset.date !== dragDate) return;
-
-      // DOM 순서 변경
-      const allRows = [...tableBody.querySelectorAll('tr')];
-      const srcIdx  = allRows.indexOf(dragSrc);
-      const tgtIdx  = allRows.indexOf(tr);
-      if (srcIdx < tgtIdx) {
-        tableBody.insertBefore(dragSrc, tr.nextSibling);
-      } else {
-        tableBody.insertBefore(dragSrc, tr);
-      }
-
-      // order 값 갱신 — 같은 날짜 그룹의 새 순서를 entries에 반영
-      applyNewOrder();
-    });
-
-    // 모바일 터치 드래그
-    let touchClone = null;
-    let touchSrc   = null;
-    let touchDate  = null;
-    let offsetX    = 0, offsetY = 0;
-
-    handle.addEventListener('touchstart', e => {
-      const touch  = e.touches[0];
-      touchSrc     = tr;
-      touchDate    = tr.dataset.date;
-      offsetX      = touch.clientX - tr.getBoundingClientRect().left;
-      offsetY      = touch.clientY - tr.getBoundingClientRect().top;
-
-      touchClone = tr.cloneNode(true);
-      touchClone.style.cssText = `
-        position:fixed; z-index:9999; opacity:0.85; pointer-events:none;
-        background:var(--bg-card); border:1px solid var(--border-focus);
-        border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.4);
-        width:${tr.offsetWidth}px;
-      `;
-      document.body.appendChild(touchClone);
-      tr.classList.add('dragging');
-      e.preventDefault();
-    }, { passive: false });
-
-    handle.addEventListener('touchmove', e => {
-      if (!touchSrc || !touchClone) return;
-      e.preventDefault();
-      const touch = e.touches[0];
-      touchClone.style.left = (touch.clientX - offsetX) + 'px';
-      touchClone.style.top  = (touch.clientY - offsetY) + 'px';
-
-      // 현재 위치 아래의 row 찾기
-      touchClone.style.display = 'none';
-      const el = document.elementFromPoint(touch.clientX, touch.clientY);
-      touchClone.style.display = '';
-      const targetRow = el?.closest('tr');
-
-      tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-      if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
-        targetRow.classList.add('drag-over');
-      }
-    }, { passive: false });
-
-    handle.addEventListener('touchend', e => {
-      if (!touchSrc || !touchClone) return;
-      touchClone.remove();
-      touchClone = null;
-      touchSrc.classList.remove('dragging');
-
-      const touch = e.changedTouches[0];
-      const el    = document.elementFromPoint(touch.clientX, touch.clientY);
-      const targetRow = el?.closest('tr');
-
-      tableBody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-
-      if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
-        const allRows = [...tableBody.querySelectorAll('tr')];
-        const srcIdx  = allRows.indexOf(touchSrc);
-        const tgtIdx  = allRows.indexOf(targetRow);
-        if (srcIdx < tgtIdx) tableBody.insertBefore(touchSrc, targetRow.nextSibling);
-        else                  tableBody.insertBefore(touchSrc, targetRow);
-        applyNewOrder();
-      }
-
-      touchSrc  = null;
-      touchDate = null;
-    });
+  /* ── 데스크탑 ── */
+  // 핸들 mousedown → 해당 tr만 draggable 활성
+  tableBody.addEventListener('mousedown', e => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const tr = handle.closest('tr');
+    if (tr) tr.draggable = true;
   });
-}
+
+  tableBody.addEventListener('dragstart', e => {
+    const tr = e.target.closest('tr');
+    if (!tr) return;
+    dragSrc  = tr;
+    dragDate = tr.dataset.date;
+    tr.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+
+  tableBody.addEventListener('dragend', e => {
+    const tr = e.target.closest('tr');
+    if (tr) { tr.draggable = false; tr.classList.remove('dragging'); }
+    tableBody.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+    dragSrc = null; dragDate = null;
+  });
+
+  tableBody.addEventListener('dragover', e => {
+    e.preventDefault();
+    const tr = e.target.closest('tr');
+    if (!tr || !dragSrc || tr === dragSrc) return;
+    if (tr.dataset.date !== dragDate) { e.dataTransfer.dropEffect = 'none'; return; }
+    e.dataTransfer.dropEffect = 'move';
+    tableBody.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+    tr.classList.add('drag-over');
+  });
+
+  tableBody.addEventListener('dragleave', e => {
+    const tr = e.target.closest('tr');
+    if (tr) tr.classList.remove('drag-over');
+  });
+
+  tableBody.addEventListener('drop', e => {
+    e.preventDefault();
+    const tr = e.target.closest('tr');
+    if (!tr || !dragSrc || tr === dragSrc) return;
+    if (tr.dataset.date !== dragDate) return;
+    tr.classList.remove('drag-over');
+
+    const all    = [...tableBody.querySelectorAll('tr')];
+    const srcIdx = all.indexOf(dragSrc);
+    const tgtIdx = all.indexOf(tr);
+    if (srcIdx < tgtIdx) tableBody.insertBefore(dragSrc, tr.nextSibling);
+    else                  tableBody.insertBefore(dragSrc, tr);
+    applyNewOrder();
+  });
+
+  /* ── 모바일 터치 ── */
+  let touchSrc   = null;
+  let touchDate  = null;
+  let touchClone = null;
+  let offsetX = 0, offsetY = 0;
+
+  tableBody.addEventListener('touchstart', e => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    const tr    = handle.closest('tr');
+    if (!tr) return;
+    const touch = e.touches[0];
+    touchSrc    = tr;
+    touchDate   = tr.dataset.date;
+    offsetX     = touch.clientX - tr.getBoundingClientRect().left;
+    offsetY     = touch.clientY - tr.getBoundingClientRect().top;
+
+    touchClone = tr.cloneNode(true);
+    touchClone.style.cssText = `
+      position:fixed;z-index:9999;opacity:0.85;pointer-events:none;
+      background:var(--bg-card);border:1px solid var(--border-focus);
+      border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,0.4);
+      width:${tr.offsetWidth}px;table-layout:fixed;
+    `;
+    document.body.appendChild(touchClone);
+    tr.classList.add('dragging');
+    e.preventDefault();
+  }, { passive: false });
+
+  tableBody.addEventListener('touchmove', e => {
+    if (!touchSrc || !touchClone) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    touchClone.style.left = (touch.clientX - offsetX) + 'px';
+    touchClone.style.top  = (touch.clientY - offsetY) + 'px';
+
+    touchClone.style.display = 'none';
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    touchClone.style.display = '';
+    const targetRow = el?.closest('tr');
+    tableBody.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+    if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
+      targetRow.classList.add('drag-over');
+    }
+  }, { passive: false });
+
+  tableBody.addEventListener('touchend', e => {
+    if (!touchSrc) return;
+    if (touchClone) { touchClone.remove(); touchClone = null; }
+    touchSrc.classList.remove('dragging');
+
+    const touch     = e.changedTouches[0];
+    const el        = document.elementFromPoint(touch.clientX, touch.clientY);
+    const targetRow = el?.closest('tr');
+    tableBody.querySelectorAll('.drag-over').forEach(r => r.classList.remove('drag-over'));
+
+    if (targetRow && targetRow !== touchSrc && targetRow.dataset.date === touchDate) {
+      const all    = [...tableBody.querySelectorAll('tr')];
+      const srcIdx = all.indexOf(touchSrc);
+      const tgtIdx = all.indexOf(targetRow);
+      if (srcIdx < tgtIdx) tableBody.insertBefore(touchSrc, targetRow.nextSibling);
+      else                  tableBody.insertBefore(touchSrc, targetRow);
+      applyNewOrder();
+    }
+    touchSrc = null; touchDate = null;
+  });
+})();
 
 // DOM 순서를 entries의 order 필드에 반영 후 저장
 function applyNewOrder() {
