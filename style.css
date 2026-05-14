@@ -109,7 +109,59 @@ a { color: inherit; text-decoration: none; }
   padding: 20px 16px 80px;
 }
 
-/* ===== 상단 바 ===== */
+/* ===== BTC 실시간 위젯 ===== */
+.btc-widget {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 5px 13px;
+  transition: border-color 0.2s;
+}
+.btc-widget:hover { border-color: #f59e0b55; }
+.btc-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.btc-futures {
+  color: #f59e0b;
+  font-size: 9px;
+  margin-left: 2px;
+}
+.btc-price {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+.btc-change {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  min-width: 52px;
+}
+.btc-updated {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .btc-updated { display: none; }
+  .btc-price   { font-size: 13px; }
+  .btc-change  { font-size: 11px; min-width: 44px; }
+}
+@media (max-width: 480px) {
+  .btc-widget  { padding: 4px 10px; gap: 5px; }
+  .btc-label   { display: none; }
+}
 .topbar {
   display: flex;
   align-items: center;

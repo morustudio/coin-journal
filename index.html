@@ -17,9 +17,16 @@
       <div class="brand">
         <span class="brand-icon">₿</span>
         <span class="brand-text">코인 매매일지</span>
-        <span class="version-badge">v0.001</span>
+        <span class="version-badge">v0.002</span>
       </div>
       <div class="topbar-actions">
+        <!-- BTC 실시간 가격 위젯 -->
+        <div id="btcRealtime" style="display:none;" class="btc-widget">
+          <span class="btc-label">BTC <span class="btc-futures">선물</span></span>
+          <span id="btcRtPrice" class="btc-price">-</span>
+          <span id="btcRtChange" class="btc-change"></span>
+          <span id="btcRtUpdated" class="btc-updated"></span>
+        </div>
         <!-- 구글 시트 연동 상태 -->
         <div class="sheets-status" id="sheets-status-wrap">
           <span class="sheets-dot" id="sheets-dot"></span>
@@ -414,6 +421,50 @@
 
   <!-- 손익 미리보기 토스트 -->
   <div id="calc-toast" class="calc-toast" style="display:none;"></div>
+
+  <script>
+  /* BTC 선물 실시간 가격 위젯 */
+  (function(){
+    var _int = null;
+    function fmtP(v){
+      return '$' + Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    }
+    async function fetchBtc(){
+      var APIS = [
+        'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT',
+        'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT'
+      ];
+      for (var i = 0; i < APIS.length; i++){
+        try {
+          var r = await fetch(APIS[i], { cache: 'no-store' });
+          if (!r.ok) continue;
+          var d     = await r.json();
+          var price = parseFloat(d.lastPrice);
+          var chg   = parseFloat(d.priceChangePercent);
+          if (isNaN(price)) continue;
+
+          var el = document.getElementById('btcRealtime');
+          el.style.display = 'flex';
+
+          document.getElementById('btcRtPrice').textContent = fmtP(price);
+
+          var ce = document.getElementById('btcRtChange');
+          ce.textContent = (chg >= 0 ? '+' : '') + chg.toFixed(2) + '%';
+          ce.style.color = chg > 0 ? 'var(--pnl-pos)' : chg < 0 ? 'var(--pnl-neg)' : 'var(--text-muted)';
+
+          var n = new Date();
+          document.getElementById('btcRtUpdated').textContent =
+            n.getHours().toString().padStart(2,'0') + ':' +
+            n.getMinutes().toString().padStart(2,'0') + ':' +
+            n.getSeconds().toString().padStart(2,'0') + ' 기준';
+          return;
+        } catch(e){}
+      }
+    }
+    fetchBtc();
+    _int = setInterval(fetchBtc, 10000);
+  })();
+  </script>
 
   <script src="script.js"></script>
 </body>
