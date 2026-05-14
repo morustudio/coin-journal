@@ -150,6 +150,7 @@ const sheetsDot       = document.getElementById('sheets-dot');
 const sheetsLabel     = document.getElementById('sheets-label');
 const sheetsConnBtn   = document.getElementById('sheets-connect-btn');
 const sheetsSyncBtn   = document.getElementById('sheets-sync-btn');
+const sheetsLoadBtn   = document.getElementById('sheets-load-btn');
 const sheetsSyncLabel = document.getElementById('sheets-sync-label');
 const lastSyncLabel   = document.getElementById('last-sync-label');
 const tableFooter     = document.getElementById('table-footer');
@@ -1024,8 +1025,10 @@ function loadSheetsUrl() {
   sheetsUrl = localStorage.getItem(SHEETS_URL_KEY) || '';
   if (sheetsUrl) {
     setSyncState('synced');
+    sheetsLoadBtn.disabled = false;
   } else {
     setSyncState('disconnected');
+    sheetsLoadBtn.disabled = true;
   }
   updateLastSyncLabel();
 }
@@ -1104,6 +1107,62 @@ async function syncToSheets() {
   } finally {
     sheetsSyncBtn.disabled = false;
   }
+}
+
+// 구글 시트에서 불러오기
+sheetsLoadBtn.addEventListener('click', async () => {
+  if (!sheetsUrl) { openSheetsModal(); return; }
+  await loadFromSheets();
+});
+
+async function loadFromSheets() {
+  if (!sheetsUrl) return;
+  sheetsLoadBtn.disabled = true;
+  sheetsLoadBtn.querySelector('span').textContent = '불러오는 중...';
+  try {
+    const res = await fetch(sheetsUrl, {
+      method:   'POST',
+      redirect: 'follow',
+      body:     JSON.stringify({ action: 'load' }),
+    });
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch(e) { throw new Error('응답 파싱 실패: ' + text.slice(0, 100)); }
+
+    if (data.status !== 'ok') throw new Error(data.message || '불러오기 실패');
+
+    const rows = normalizeRows(data.entries || []);
+    if (!rows.length) {
+      alert('구글 시트에 저장된 데이터가 없습니다.');
+      return;
+    }
+
+    const merge = confirm(
+      `구글 시트에서 ${rows.length}건을 찾았습니다.\n\n[확인] 기존 데이터에 병합\n[취소] 기존 데이터 교체`
+    );
+    entries = merge ? mergeEntries(entries, rows) : rows;
+    saveEntries();
+    renderAll();
+    setSyncState('synced');
+    localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
+    updateLastSyncLabel();
+    alert(`불러오기 완료: ${rows.length}건`);
+
+  } catch(err) {
+    console.error('Sheets load error:', err);
+    alert('구글 시트 불러오기 실패\n\n원인: ' + err.message);
+  } finally {
+    sheetsLoadBtn.disabled = false;
+    sheetsLoadBtn.querySelector('span').textContent = '시트에서 불러오기';
+  }
+}
+
+// 병합: 시트 데이터를 기준으로 로컬에 없는 항목 추가, 있으면 시트 데이터 우선
+function mergeEntries(local, remote) {
+  const localMap = new Map(local.map(e => [String(e.id), e]));
+  remote.forEach(r => { localMap.set(String(r.id), r); });
+  return [...localMap.values()].sort((a, b) => a.createdAt - b.createdAt);
 }
 
 // 시트 설정 모달 열기
