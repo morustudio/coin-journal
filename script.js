@@ -1064,17 +1064,34 @@ function updateLastSyncLabel() {
   }
 }
 
-// 동기화 버튼
+// 동기화(저장) 버튼
 sheetsSyncBtn.addEventListener('click', async () => {
-  if (!sheetsUrl) {
-    openSheetsModal();
-    return;
+  if (!sheetsUrl) { openSheetsModal(); return; }
+
+  // 로컬이 비어있으면 불러오기 먼저 제안
+  if (entries.length === 0) {
+    const choice = confirm(
+      '⚠️ 로컬에 매매 기록이 없습니다.\n\n구글 시트에 기존 데이터가 있을 수 있습니다.\n\n[확인] 시트에서 먼저 불러오기\n[취소] 빈 데이터로 덮어쓰기 (시트 데이터 삭제됨)'
+    );
+    if (choice) {
+      await loadFromSheets();
+      return;
+    }
   }
   await syncToSheets();
 });
 
 async function syncToSheets() {
   if (!sheetsUrl) return;
+
+  // 로컬 데이터가 비어있으면 구글 시트 덮어쓰기 방지
+  if (entries.length === 0) {
+    const go = confirm(
+      '⚠️ 로컬에 저장된 매매 기록이 없습니다.\n\n이 상태로 저장하면 구글 시트의 기존 데이터가 모두 삭제됩니다.\n\n[확인] 그래도 저장  [취소] 취소'
+    );
+    if (!go) return;
+  }
+
   setSyncState('loading');
   sheetsSyncBtn.disabled = true;
   try {
