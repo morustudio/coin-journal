@@ -417,7 +417,7 @@ label {
 input, select, textarea {
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  padding: 8px 10px;
+
   background: var(--bg-input);
   color: var(--text);
   font-size: 13px;
