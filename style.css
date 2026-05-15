@@ -941,6 +941,7 @@ tr.drag-over td { border-top: 2px solid var(--accent); }
   tbody tr td:nth-child(10) { display: none; }
 }
 
+@media (max-width: 768px) {
   .brand-text { font-size: 18px; }
   .topbar { margin-bottom: 14px; }
   .sheets-label { display: none; } /* 모바일에서 텍스트 숨김 */
