@@ -171,6 +171,19 @@ const fmtNum  = n => new Intl.NumberFormat('ko-KR', { maximumFractionDigits: 2 }
 const todayISO= () => new Date().toISOString().slice(0, 10);
 const toDate  = d  => new Date(d + 'T00:00:00');
 
+// 날짜 문자열을 YYYY-MM-DD 로 정규화
+function fmtDate(raw) {
+  if (!raw) return '';
+  const s = String(raw).trim();
+  // 이미 YYYY-MM-DD 형식이면 그대로
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // Date 객체 문자열 등 다른 형식 파싱
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s; // 파싱 불가면 원본 반환
+  const z = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+}
+
 function addMonths(date, m) {
   const d = new Date(date);
   d.setMonth(d.getMonth() + m);
@@ -220,6 +233,21 @@ function hookDatePickers() {
     if (el.__hooked) return;
     el.__hooked = true;
     el.addEventListener('click', () => { try { el.showPicker(); } catch(e){} });
+  });
+}
+
+/* ===== textarea 자동 높이 ===== */
+function autoResizeTextarea(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.max(60, el.scrollHeight) + 'px';
+}
+function hookTextareas() {
+  document.querySelectorAll('textarea').forEach(el => {
+    if (el.__autoResizeHooked) return;
+    el.__autoResizeHooked = true;
+    el.addEventListener('input', () => autoResizeTextarea(el));
+    // 초기값 있을 때 높이 맞추기
+    if (el.value) autoResizeTextarea(el);
   });
 }
 
@@ -463,10 +491,12 @@ function renderTable() {
   const rows = entriesInWindow().slice().sort((a, b) => {
     const dateA = a.date || '';
     const dateB = b.date || '';
+    // 날짜 내림차순 (최신 상단)
     if (dateA !== dateB) return dateB.localeCompare(dateA);
+    // 같은 날짜: order 내림차순 (드래그 후 저장된 순서 반영)
     const oA = a.order !== undefined ? a.order : a.createdAt;
     const oB = b.order !== undefined ? b.order : b.createdAt;
-    return oA - oB;
+    return oB - oA;
   });
 
   tableBody.innerHTML = '';
@@ -498,7 +528,7 @@ function renderTable() {
           <path d="M9 3h2v2H9zm4 0h2v2h-2zM9 7h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 15h2v2H9zm4 0h2v2h-2zM9 19h2v2H9zm4 0h2v2h-2z"/>
         </svg>
       </td>
-      <td>${entry.date || ''}</td>
+      <td>${fmtDate(entry.date)}</td>
       <td><b>${entry.symbol || ''}</b></td>
       <td>${sideTag}</td>
       <td class="text-mono">${lv}</td>
@@ -961,6 +991,10 @@ function resetForm() {
   fLeverage().value = '1';
   const breakdown = document.getElementById('pnl-breakdown');
   if (breakdown) breakdown.innerHTML = '';
+  // textarea 높이 리셋
+  form.querySelectorAll('textarea').forEach(el => {
+    el.style.height = '60px';
+  });
 }
 document.getElementById('reset-form-btn').addEventListener('click', resetForm);
 document.getElementById('clear-all-btn').addEventListener('click', () => {
@@ -1008,6 +1042,7 @@ function openModal(id) {
   modalBackdrop.style.display = 'flex';
   document.body.classList.add('modal-open');
   hookDatePickers();
+  hookTextareas();
 }
 
 function closeModal() {
@@ -1165,7 +1200,7 @@ function normalizeRows(items) {
     if (!createdAt) createdAt = Date.parse(date) || Date.now() + idx;
     return {
       id: Number(id), createdAt: Number(createdAt),
-      date: String(date), symbol: String(g(o,['symbol','종목'])||'BTC'),
+      date: fmtDate(date), symbol: String(g(o,['symbol','종목'])||'BTC'),
       side: String(g(o,['side','포지션'])||'LONG'),
       leverage: String(g(o,['leverage','레버리지'])||'1'),
       avgEntry: String(avgEntry), exitPrice: String(g(o,['exitPrice','청산가'])||''),
@@ -1434,6 +1469,7 @@ function boot() {
   fLeverage().value = '1';
   setRangePreset('ALL');
   hookDatePickers();
+  hookTextareas();
 }
 
 boot();
