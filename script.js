@@ -1140,14 +1140,14 @@ function openModal(id) {
   m_lesson.value    = row.lesson || '';
 
   setModalReadOnly(true);
-  modalBackdrop.style.display = 'flex';
+  modalBackdrop.classList.add('is-open');
   document.body.classList.add('modal-open');
   hookDatePickers();
   hookTextareas();
 }
 
 function closeModal() {
-  modalBackdrop.style.display = 'none';
+  modalBackdrop.classList.remove('is-open');
   document.body.classList.remove('modal-open');
   currentId = null;
 }
@@ -1164,7 +1164,7 @@ function setModalReadOnly(ro) {
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
 modalBackdrop.addEventListener('click', e => { if (e.target === modalBackdrop) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalBackdrop.style.display === 'flex') closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalBackdrop.classList.contains('is-open')) closeModal(); });
 
 document.getElementById('modal-edit').addEventListener('click', () => setModalReadOnly(false));
 document.getElementById('modal-cancel').addEventListener('click', () => { if (currentId !== null) openModal(currentId); });
@@ -1486,11 +1486,11 @@ function openSheetsModal() {
   appsScriptCodeEl.textContent = APPS_SCRIPT_CODE;
   sheetsUrlInput.value = sheetsUrl || '';
   sheetsTestResult.textContent = '';
-  sheetsModalBackdrop.style.display = 'flex';
+  sheetsModalBackdrop.classList.add('is-open');
   document.body.classList.add('modal-open');
 }
 function closeSheetsModal() {
-  sheetsModalBackdrop.style.display = 'none';
+  sheetsModalBackdrop.classList.remove('is-open');
   document.body.classList.remove('modal-open');
 }
 sheetsModalClose.addEventListener('click', closeSheetsModal);
