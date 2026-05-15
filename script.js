@@ -1264,12 +1264,15 @@ function normalizeRows(items) {
       avgEntry: String(avgEntry), exitPrice: String(g(o,['exitPrice','청산가'])||''),
       quantity: String(quantity), fee: String(g(o,['fee','수수료'])||''),
       tp: String(g(o,['tp','목표가'])||''), sl: String(g(o,['sl','손절가'])||''),
-      pnl: String(g(o,['pnl','손익'])||''), pnlPercent: String(g(o,['pnlPercent','손익률'])||''),
+      realizedPnl: String(g(o,['realizedPnl','실현손익'])||''),
+      pnl: String(g(o,['pnl','손익','최종손익'])||''),
+      pnlPercent: String(g(o,['pnlPercent','손익률'])||''),
       reason: String(g(o,['reason','진입근거'])||''),
       exitReason: String(g(o,['exitReason','청산이유'])||''),
       lesson: String(g(o,['lesson','교훈','피드백'])||''),
+      order: o['order'] !== undefined ? Number(o['order']) : undefined,
     };
-  }).filter(Boolean).sort((a,b) => a.createdAt - b.createdAt);
+  }).filter(Boolean); // ← 정렬 제거: renderTable에서 처리
 }
 
 /* ===== 구글 시트 (Apps Script) 연동 ===== */
@@ -1431,7 +1434,7 @@ async function loadFromSheets() {
 function mergeEntries(local, remote) {
   const localMap = new Map(local.map(e => [String(e.id), e]));
   remote.forEach(r => { localMap.set(String(r.id), r); });
-  return [...localMap.values()].sort((a, b) => a.createdAt - b.createdAt);
+  return [...localMap.values()]; // ← 정렬 제거: renderTable에서 처리
 }
 
 // 시트 설정 모달 열기

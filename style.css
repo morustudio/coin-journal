@@ -626,7 +626,7 @@ tbody tr:last-child td { border-bottom: none; }
   padding: 16px;
 }
 .modal {
-  width: min(860px, 100%);
+  width: min(860px, calc(100% - 48px));
   max-height: 90vh;
   overflow-y: auto;
   background: var(--bg-modal);
@@ -635,7 +635,7 @@ tbody tr:last-child td { border-bottom: none; }
   box-shadow: var(--shadow-modal);
   z-index: 10000;
 }
-.modal-sm { width: min(560px, 100%); }
+.modal-sm { width: min(560px, calc(100% - 48px)); }
 body.modal-open { overflow: hidden; }
 
 .modal-header {
