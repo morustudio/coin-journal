@@ -833,7 +833,7 @@ function getChartColors() {
 }
 
 function drawChart(points, baseline) {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr  = window.devicePixelRatio || 1;
   const rect = chartCanvas.parentElement.getBoundingClientRect();
   const cssW = rect.width || 600;
   const cssH = 220;
@@ -844,7 +844,7 @@ function drawChart(points, baseline) {
   ctx.scale(dpr, dpr);
 
   const w = cssW, h = cssH;
-  const padL = 56, padR = 14, padT = 12, padB = 28;
+  const padL = 60, padR = 14, padT = 16, padB = 28;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
   const colors = getChartColors();
@@ -852,13 +852,15 @@ function drawChart(points, baseline) {
   ctx.clearRect(0, 0, w, h);
 
   const values = points.map(p => p.equity);
-  const minV = Math.min(...values), maxV = Math.max(...values);
+  const minV = Math.min(...values, baseline);
+  const maxV = Math.max(...values, baseline);
   const span = maxV - minV || 1;
 
   const toX = i   => padL + (i / Math.max(points.length - 1, 1)) * innerW;
   const toY = val => h - padB - ((val - minV) / span) * innerH;
+  const yBase = toY(baseline);
 
-  // 격자선
+  /* 격자선 */
   ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
   [0, 0.25, 0.5, 0.75, 1].forEach(t => {
@@ -866,57 +868,98 @@ function drawChart(points, baseline) {
     ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
   });
 
-  // 기준선
-  const yBase = toY(baseline);
+  /* 기준선 (점선) */
   ctx.strokeStyle = colors.baseline;
   ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
+  ctx.setLineDash([5, 4]);
   ctx.beginPath(); ctx.moveTo(padL, yBase); ctx.lineTo(w - padR, yBase); ctx.stroke();
   ctx.setLineDash([]);
 
-  // 영역 채우기
-  const lastEquity = points[points.length - 1]?.equity || baseline;
-  const isProfit = lastEquity >= baseline;
-  const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
-  if (isProfit) {
-    grad.addColorStop(0, 'rgba(52,211,153,0.18)');
-    grad.addColorStop(1, 'rgba(52,211,153,0)');
-  } else {
-    grad.addColorStop(0, 'rgba(248,113,113,0)');
-    grad.addColorStop(1, 'rgba(248,113,113,0.18)');
+  /* C방식: 기준선 위=초록 / 아래=빨강 구간 분리 */
+  function crossX(i) {
+    const x1 = toX(i),   y1 = points[i].equity;
+    const x2 = toX(i+1), y2 = points[i+1].equity;
+    return x1 + (x2 - x1) * (baseline - y1) / (y2 - y1);
   }
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = toX(i), y = toY(p.equity);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.lineTo(toX(points.length - 1), h - padB);
-  ctx.lineTo(toX(0), h - padB);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
 
-  // 라인
-  ctx.strokeStyle = isProfit ? colors.linePos : colors.lineNeg;
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  points.forEach((p, i) => {
-    const x = toX(i), y = toY(p.equity);
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  });
-  ctx.stroke();
+  const segments = [];
+  if (points.length > 0) {
+    let cur = { pts: [], isProfit: points[0].equity >= baseline };
+    points.forEach((p, i) => {
+      cur.pts.push({ x: toX(i), y: toY(p.equity) });
+      if (i < points.length - 1) {
+        const currAbove = p.equity >= baseline;
+        const nextAbove = points[i+1].equity >= baseline;
+        if (currAbove !== nextAbove) {
+          const cx = crossX(i);
+          cur.pts.push({ x: cx, y: yBase });
+          segments.push(cur);
+          cur = { pts: [{ x: cx, y: yBase }], isProfit: nextAbove };
+        }
+      }
+    });
+    segments.push(cur);
+  }
 
-  // Y 레이블
-  ctx.fillStyle = colors.label;
-  ctx.font = `10px var(--font-mono, monospace)`;
+  segments.forEach(seg => {
+    if (seg.pts.length < 2) return;
+    const rgb = seg.isProfit ? '52,211,153' : '248,113,113';
+
+    /* 영역 그라디언트 */
+    const grad = ctx.createLinearGradient(0, padT, 0, h - padB);
+    if (seg.isProfit) {
+      grad.addColorStop(0,   `rgba(${rgb},0.22)`);
+      grad.addColorStop(0.6, `rgba(${rgb},0.06)`);
+      grad.addColorStop(1,   `rgba(${rgb},0)`);
+    } else {
+      grad.addColorStop(0,   `rgba(${rgb},0)`);
+      grad.addColorStop(0.4, `rgba(${rgb},0.06)`);
+      grad.addColorStop(1,   `rgba(${rgb},0.22)`);
+    }
+    ctx.beginPath();
+    seg.pts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+    ctx.lineTo(seg.pts[seg.pts.length-1].x, yBase);
+    ctx.lineTo(seg.pts[0].x, yBase);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    /* 라인 */
+    ctx.beginPath();
+    ctx.strokeStyle = seg.isProfit ? colors.linePos : colors.lineNeg;
+    ctx.lineWidth   = 2;
+    ctx.lineJoin    = 'round';
+    ctx.lineCap     = 'round';
+    seg.pts.forEach((pt, i) => i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+    ctx.stroke();
+  });
+
+  /* 마지막 포인트 강조 */
+  if (points.length > 0) {
+    const last     = points[points.length - 1];
+    const lx       = toX(points.length - 1);
+    const ly       = toY(last.equity);
+    const dotColor = last.equity >= baseline ? 'rgba(52,211,153,1)' : 'rgba(248,113,113,1)';
+    ctx.beginPath();
+    ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+    ctx.fillStyle   = dotColor;
+    ctx.fill();
+    ctx.strokeStyle = colors.grid;
+    ctx.lineWidth   = 1.5;
+    ctx.stroke();
+  }
+
+  /* Y 레이블 */
+  ctx.font      = `10px var(--font-mono, monospace)`;
   ctx.textAlign = 'right';
-  [maxV, baseline, minV].forEach(v => {
-    const y = toY(v);
-    ctx.fillText(fmtNum(v), padL - 4, y + 3);
-  });
+  ctx.fillStyle = colors.baseline;
+  ctx.fillText(fmtNum(baseline), padL - 4, yBase - 3);
+  ctx.fillStyle = colors.label;
+  if (Math.abs(toY(maxV) - yBase) > 14) ctx.fillText(fmtNum(maxV), padL - 4, toY(maxV) + 3);
+  if (Math.abs(toY(minV) - yBase) > 14) ctx.fillText(fmtNum(minV), padL - 4, toY(minV) + 3);
 
-  // X 레이블 (첫 / 마지막)
+  /* X 레이블 */
+  ctx.fillStyle = colors.label;
   ctx.textAlign = 'left';
   if (points.length >= 2) {
     ctx.fillText(points[0].label, padL, h - 6);
