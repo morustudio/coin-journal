@@ -18,6 +18,7 @@ let entries = [];
 let settings = { startingCash: 10000 };
 let currentId = null;
 let currentRange = { type: 'ALL', from: null, to: null };
+let currentSort  = { key: 'date', dir: 'desc' }; // key: 컬럼키, dir: 'asc'|'desc', null=기본(날짜순)
 let sheetsUrl = '';
 let syncState = 'disconnected'; // disconnected | synced | pending | error
 
@@ -488,25 +489,55 @@ function entriesInWindow() {
 
 /* ===== 테이블 렌더 ===== */
 function renderTable() {
+  const isDefaultSort = currentSort.key === 'date' && currentSort.dir === 'desc';
+
   const rows = entriesInWindow().slice().sort((a, b) => {
-    const dateA = a.date || '';
-    const dateB = b.date || '';
-    // 날짜 내림차순 (최신 상단)
-    if (dateA !== dateB) return dateB.localeCompare(dateA);
-    // 같은 날짜: order 내림차순 (드래그 후 저장된 순서 반영)
-    const oA = a.order !== undefined ? a.order : a.createdAt;
-    const oB = b.order !== undefined ? b.order : b.createdAt;
-    return oB - oA;
+    const { key, dir } = currentSort;
+    const mul = dir === 'asc' ? 1 : -1;
+
+    if (key === 'date') {
+      const dateA = a.date || '';
+      const dateB = b.date || '';
+      if (dateA !== dateB) return dateB.localeCompare(dateA) * (dir === 'desc' ? 1 : -1);
+      // 기본 날짜정렬일 때만 order/createdAt 반영
+      const oA = a.order !== undefined ? a.order : a.createdAt;
+      const oB = b.order !== undefined ? b.order : b.createdAt;
+      return (oA - oB);
+    }
+
+    // 숫자 컬럼
+    if (['leverage','avgEntry','exitPrice','quantity','pnl','pnlPercent'].includes(key)) {
+      const nA = parseFloat(a[key]) || 0;
+      const nB = parseFloat(b[key]) || 0;
+      return (nA - nB) * mul;
+    }
+
+    // 문자 컬럼
+    const sA = String(a[key] || '').toLowerCase();
+    const sB = String(b[key] || '').toLowerCase();
+    return sA.localeCompare(sB) * mul;
   });
 
   tableBody.innerHTML = '';
   emptyState.style.display = rows.length ? 'none' : 'block';
 
+  // 헤더 정렬 아이콘 갱신
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    const icon = th.querySelector('.sort-icon');
+    if (!icon) return;
+    if (th.dataset.sort === currentSort.key) {
+      icon.textContent = currentSort.dir === 'asc' ? ' ↑' : ' ↓';
+      th.classList.add('sort-active');
+    } else {
+      icon.textContent = '';
+      th.classList.remove('sort-active');
+    }
+  });
+
   rows.forEach(entry => {
     const tr = document.createElement('tr');
     tr.dataset.id   = entry.id;
     tr.dataset.date = entry.date || '';
-    // draggable은 핸들 mousedown 시 동적으로 설정
 
     const pnlNum   = parseFloat(entry.pnl || 0);
     const realNum  = parseFloat(entry.realizedPnl || 0);
@@ -522,9 +553,15 @@ function renderTable() {
          ${(entry.realizedPnl || entry.fee) ? `<div class="pnl-sub">${entry.realizedPnl ? `실현 ${sign(realNum)}${fmt2(entry.realizedPnl)}` : ''}${entry.fee ? ` / 수수료 -${fmt2(entry.fee)}` : ''}</div>` : ''}`
       : '-';
 
+    // 드래그 핸들: 기본 날짜정렬일 때만 활성
+    const handleOpacity = isDefaultSort ? '0.35' : '0.12';
+    const handleTitle   = isDefaultSort
+      ? '드래그로 같은 날짜 내 순서 변경'
+      : '날짜 기본 정렬 상태에서만 순서 변경 가능';
+
     tr.innerHTML = `
-      <td class="drag-handle" title="드래그로 같은 날짜 내 순서 변경">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity:0.35">
+      <td class="drag-handle ${isDefaultSort ? '' : 'drag-disabled'}" title="${handleTitle}">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="opacity:${handleOpacity}">
           <path d="M9 3h2v2H9zm4 0h2v2h-2zM9 7h2v2H9zm4 0h2v2h-2zM9 11h2v2H9zm4 0h2v2h-2zM9 15h2v2H9zm4 0h2v2h-2zM9 19h2v2H9zm4 0h2v2h-2z"/>
         </svg>
       </td>
@@ -542,6 +579,27 @@ function renderTable() {
   });
 }
 
+/* ===== 컬럼 클릭 정렬 ===== */
+document.querySelector('thead').addEventListener('click', e => {
+  const th = e.target.closest('th[data-sort]');
+  if (!th) return;
+  const key = th.dataset.sort;
+
+  if (currentSort.key === key) {
+    // 같은 컬럼 재클릭: asc → desc → 기본(date desc)
+    if (currentSort.dir === 'desc') {
+      currentSort.dir = 'asc';
+    } else {
+      // 기본으로 복귀
+      currentSort = { key: 'date', dir: 'desc' };
+    }
+  } else {
+    // 다른 컬럼 클릭: 해당 컬럼 desc 시작
+    currentSort = { key, dir: 'desc' };
+  }
+  renderTable();
+});
+
 /* ===== 드래그 앤 드롭 — 이벤트 위임 방식 ===== */
 /* tableBody에 한 번만 등록, renderTable 재호출과 무관하게 동작 */
 (function initDragDrop() {
@@ -549,10 +607,10 @@ function renderTable() {
   let dragDate = null;
 
   /* ── 데스크탑 ── */
-  // 핸들 mousedown → 해당 tr만 draggable 활성
+  // 핸들 mousedown → 해당 tr만 draggable 활성 (기본 날짜정렬일 때만)
   tableBody.addEventListener('mousedown', e => {
     const handle = e.target.closest('.drag-handle');
-    if (!handle) return;
+    if (!handle || handle.classList.contains('drag-disabled')) return;
     const tr = handle.closest('tr');
     if (tr) tr.draggable = true;
   });
@@ -611,7 +669,7 @@ function renderTable() {
 
   tableBody.addEventListener('touchstart', e => {
     const handle = e.target.closest('.drag-handle');
-    if (!handle) return;
+    if (!handle || handle.classList.contains('drag-disabled')) return;
     const tr    = handle.closest('tr');
     if (!tr) return;
     const touch = e.touches[0];
