@@ -13,7 +13,67 @@ const THEME_KEY      = 'cj:theme_v1';
 const SHEETS_URL_KEY = 'cj:sheets_url_v1';
 const LAST_SYNC_KEY  = 'cj:last_sync_v1';
 
-/* ===== 앱 상태 ===== */
+/* ===== 커스텀 토스트 ===== */
+function showToast(msg, type = 'info', duration = 3000) {
+  const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = `toast-item toast-${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ️'}</span><span class="toast-msg">${msg}</span>`;
+  container.appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'toastOut 0.25s ease forwards';
+    setTimeout(() => el.remove(), 250);
+  }, duration);
+}
+
+/* ===== 커스텀 다이얼로그 (alert/confirm 대체) ===== */
+function showAlert(msg, title = '알림', type = 'info') {
+  return new Promise(resolve => {
+    const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+    document.getElementById('dialog-title').textContent = `${icons[type] || ''} ${title}`;
+    document.getElementById('dialog-message').textContent = msg;
+    const actions = document.getElementById('dialog-actions');
+    actions.innerHTML = '';
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-primary btn-sm';
+    btn.textContent = '확인';
+    btn.onclick = () => { closeCustomDialog(); resolve(true); };
+    actions.appendChild(btn);
+    openCustomDialog();
+  });
+}
+
+function showConfirm(msg, title = '확인', confirmText = '확인', cancelText = '취소', confirmClass = 'btn-primary') {
+  return new Promise(resolve => {
+    document.getElementById('dialog-title').textContent = title;
+    document.getElementById('dialog-message').textContent = msg;
+    const actions = document.getElementById('dialog-actions');
+    actions.innerHTML = '';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-ghost btn-sm';
+    cancelBtn.textContent = cancelText;
+    cancelBtn.onclick = () => { closeCustomDialog(); resolve(false); };
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = `btn ${confirmClass} btn-sm`;
+    confirmBtn.textContent = confirmText;
+    confirmBtn.onclick = () => { closeCustomDialog(); resolve(true); };
+    actions.appendChild(cancelBtn);
+    actions.appendChild(confirmBtn);
+    openCustomDialog();
+  });
+}
+
+function openCustomDialog() {
+  document.getElementById('custom-dialog-backdrop').classList.add('is-open');
+  document.body.classList.add('modal-open');
+}
+function closeCustomDialog() {
+  document.getElementById('custom-dialog-backdrop').classList.remove('is-open');
+  document.body.classList.remove('modal-open');
+}
+
+
 let entries = [];
 let settings = { startingCash: 10000 };
 let currentId = null;
@@ -268,8 +328,8 @@ principlesSave.addEventListener('click', savePrinciples);
 principlesTA.addEventListener('blur', () => {
   if ((principlesTA.value||'').trim() !== (localStorage.getItem(PRINCIPLES_KEY)||'')) savePrinciples();
 });
-principlesReset.addEventListener('click', () => {
-  if (!confirm('매매 원칙을 모두 비울까요?')) return;
+principlesReset.addEventListener('click', async () => {
+  if (!await showConfirm('매매 원칙을 모두 비울까요?', '초기화', '비우기', '취소', 'btn-danger')) return;
   principlesTA.value = '';
   localStorage.removeItem(PRINCIPLES_KEY);
   principlesStat.textContent = '매매 원칙이 삭제되었습니다.';
@@ -290,7 +350,7 @@ function loadSettings() {
 }
 function saveSettings() {
   const val = parseFloat(startingCashEl.value);
-  if (isNaN(val) || val < 0) { alert('증거금은 0 이상 숫자여야 합니다.'); return; }
+  if (isNaN(val) || val < 0) { showToast('증거금은 0 이상 숫자여야 합니다.', 'warning'); return; }
   settings.startingCash = val;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ startingCash: val }));
   renderAll();
@@ -425,35 +485,22 @@ document.getElementById('calc-preview-btn').addEventListener('click', () => {
   const lv    = fLeverage().value || '1';
   const fee   = fFee().value || '0';
 
-  if (!entry || !qty) { showToast('진입가와 수량을 먼저 입력해주세요.', 2000); return; }
+  if (!entry || !qty) { showToast('진입가와 수량을 먼저 입력해주세요.', 'warning'); return; }
 
   const tp = fTp().value;
   const sl = fSl().value;
-  let html = `<div style="font-weight:700;margin-bottom:8px;">💰 TP/SL 손익 미리보기</div>`;
-
+  const msgs = [];
   if (tp) {
     const r = calcPnl(side, entry, tp, qty, lv, fee);
-    if (r) html += `
-      <div>🎯 TP 도달: <b style="color:var(--pnl-pos)">+${r.pnl} USDT (+${r.pnlPercent}%)</b></div>
-      <div style="color:var(--text-muted);font-size:11px;margin-bottom:4px;">실현 ${(+r.realizedPnl).toFixed(2)} / 수수료 -${(+fee).toFixed(2)}</div>`;
+    if (r) msgs.push(`🎯 TP: +${r.pnl} USDT (+${r.pnlPercent}%)`);
   }
   if (sl) {
     const r = calcPnl(side, entry, sl, qty, lv, fee);
-    if (r) html += `
-      <div>🛑 SL 도달: <b style="color:var(--pnl-neg)">${r.pnl} USDT (${r.pnlPercent}%)</b></div>
-      <div style="color:var(--text-muted);font-size:11px;">실현 ${(+r.realizedPnl).toFixed(2)} / 수수료 -${(+fee).toFixed(2)}</div>`;
+    if (r) msgs.push(`🛑 SL: ${r.pnl} USDT (${r.pnlPercent}%)`);
   }
-  if (!tp && !sl) html += `<div style="color:var(--text-muted)">목표가(TP) 또는 손절가(SL)를 입력해주세요.</div>`;
-  showToast(html, 5000);
+  if (!msgs.length) { showToast('목표가(TP) 또는 손절가(SL)를 입력해주세요.', 'warning'); return; }
+  msgs.forEach((m, i) => setTimeout(() => showToast(m, i === 0 ? 'success' : 'error', 4000), i * 200));
 });
-
-function showToast(html, duration = 3000) {
-  const toast = document.getElementById('calc-toast');
-  toast.innerHTML = html;
-  toast.style.display = 'block';
-  clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => { toast.style.display = 'none'; }, duration);
-}
 
 /* ===== 기간 필터 ===== */
 function setRangePreset(type) {
@@ -499,10 +546,10 @@ function renderTable() {
       const dateA = a.date || '';
       const dateB = b.date || '';
       if (dateA !== dateB) return dateB.localeCompare(dateA) * (dir === 'desc' ? 1 : -1);
-      // 기본 날짜정렬일 때만 order/createdAt 반영
+      // 같은 날짜: 최신 추가 순서 (내림차순) — 새 항목이 위로
       const oA = a.order !== undefined ? a.order : a.createdAt;
       const oB = b.order !== undefined ? b.order : b.createdAt;
-      return (oA - oB);
+      return (oB - oA);
     }
 
     // 숫자 컬럼
@@ -1048,7 +1095,7 @@ form.addEventListener('submit', e => {
   const lesson      = fLesson().value.trim();
 
   if (!date || !symbol || !avgEntry || !quantity) {
-    alert('날짜, 종목, 진입가, 수량은 필수입니다.');
+    showToast('날짜, 종목, 진입가, 수량은 필수입니다.', 'warning'); 
     return;
   }
 
@@ -1098,8 +1145,8 @@ function resetForm() {
   });
 }
 document.getElementById('reset-form-btn').addEventListener('click', resetForm);
-document.getElementById('clear-all-btn').addEventListener('click', () => {
-  if (!confirm('모든 매매 기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
+document.getElementById('clear-all-btn').addEventListener('click', async () => {
+  if (!await showConfirm('모든 매매 기록을 삭제할까요?\n되돌릴 수 없습니다.', '⚠️ 전체 삭제', '삭제', '취소', 'btn-danger')) return;
   entries = [];
   saveEntries();
   renderAll();
@@ -1172,7 +1219,7 @@ document.getElementById('modal-cancel').addEventListener('click', () => { if (cu
 document.getElementById('modal-save').addEventListener('click', () => {
   if (currentId === null) return;
   if (!m_date.value || !m_avgEntry.value || !m_qty.value) {
-    alert('날짜, 진입가, 수량은 필수입니다.');
+    showToast('날짜, 진입가, 수량은 필수입니다.', 'warning');
     return;
   }
   entries = entries.map(row => {
@@ -1211,9 +1258,9 @@ document.getElementById('modal-save').addEventListener('click', () => {
   setModalReadOnly(true);
 });
 
-document.getElementById('modal-delete').addEventListener('click', () => {
+document.getElementById('modal-delete').addEventListener('click', async () => {
   if (currentId === null) return;
-  if (!confirm('이 매매 기록을 삭제할까요?')) return;
+  if (!await showConfirm('이 매매 기록을 삭제할까요?', '삭제', '삭제', '취소', 'btn-danger')) return;
   entries = entries.filter(r => r.id !== currentId);
   saveEntries();
   renderAll();
@@ -1246,20 +1293,20 @@ document.getElementById('csv-file').addEventListener('change', ev => {
   const file = ev.target.files?.[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const text   = String(e.target.result || '');
       const parsed = parseCSV(text);
       const rows   = normalizeRows(parsed);
-      if (!rows.length) { alert('가져올 유효한 행이 없습니다.'); return; }
-      const merge = confirm(`${rows.length}건 발견.\n[확인]=기존에 추가  [취소]=전체 교체`);
+      if (!rows.length) { showToast('가져올 유효한 행이 없습니다.', 'warning'); return; }
+      const merge = await showConfirm(`CSV에서 ${rows.length}건을 찾았습니다.\n기존 데이터에 추가할까요?`, 'CSV 가져오기', '추가', '전체 교체');
       entries = merge ? entries.concat(rows) : rows;
       saveEntries();
       renderAll();
-      alert(`가져오기 완료: ${rows.length}건`);
+      showToast(`가져오기 완료: ${rows.length}건`, 'success');
     } catch(err) {
       console.error(err);
-      alert('CSV 파싱 오류. 파일 형식을 확인해 주세요.');
+      showToast('CSV 파싱 오류. 파일 형식을 확인해 주세요.', 'error');
     } finally { ev.target.value = ''; }
   };
   reader.readAsText(file, 'utf-8');
@@ -1368,8 +1415,9 @@ sheetsSyncBtn.addEventListener('click', async () => {
 
   // 로컬이 비어있으면 불러오기 먼저 제안
   if (entries.length === 0) {
-    const choice = confirm(
-      '⚠️ 로컬에 매매 기록이 없습니다.\n\n구글 시트에 기존 데이터가 있을 수 있습니다.\n\n[확인] 시트에서 먼저 불러오기\n[취소] 빈 데이터로 덮어쓰기 (시트 데이터 삭제됨)'
+    const choice = await showConfirm(
+      '로컬에 매매 기록이 없습니다.\n구글 시트에 기존 데이터가 있을 수 있습니다.\n\n시트에서 먼저 불러올까요?',
+      '⚠️ 저장 전 확인', '시트에서 불러오기', '빈 데이터로 덮어쓰기', 'btn-primary'
     );
     if (choice) {
       await loadFromSheets();
@@ -1384,8 +1432,9 @@ async function syncToSheets() {
 
   // 로컬 데이터가 비어있으면 구글 시트 덮어쓰기 방지
   if (entries.length === 0) {
-    const go = confirm(
-      '⚠️ 로컬에 저장된 매매 기록이 없습니다.\n\n이 상태로 저장하면 구글 시트의 기존 데이터가 모두 삭제됩니다.\n\n[확인] 그래도 저장  [취소] 취소'
+    const go = await showConfirm(
+      '로컬에 저장된 매매 기록이 없습니다.\n이 상태로 저장하면 구글 시트의 기존 데이터가 모두 삭제됩니다.',
+      '⚠️ 주의', '그래도 저장', '취소', 'btn-danger'
     );
     if (!go) return;
   }
@@ -1418,7 +1467,7 @@ async function syncToSheets() {
   } catch(err) {
     console.error('Sheets sync error:', err);
     setSyncState('error');
-    alert('구글 시트 동기화 실패\n\n원인: ' + err.message + '\n\n확인사항:\n1. Apps Script URL이 올바른지 확인\n2. 배포 시 액세스 권한이 "모든 사용자"로 설정됐는지 확인\n3. Apps Script 코드를 최신 버전으로 재배포했는지 확인');
+    showToast('구글 시트 동기화 실패: ' + err.message, 'error', 5000);
   } finally {
     sheetsSyncBtn.disabled = false;
   }
@@ -1449,24 +1498,29 @@ async function loadFromSheets() {
 
     const rows = normalizeRows(data.entries || []);
     if (!rows.length) {
-      alert('구글 시트에 저장된 데이터가 없습니다.');
+      showToast('구글 시트에 저장된 데이터가 없습니다.', 'warning');
       return;
     }
 
-    const merge = confirm(
-      `구글 시트에서 ${rows.length}건을 찾았습니다.\n\n[확인] 기존 데이터에 병합\n[취소] 기존 데이터 교체`
-    );
-    entries = merge ? mergeEntries(entries, rows) : rows;
+    // 로컬 데이터 있을 때만 경고
+    if (entries.length > 0) {
+      const ok = await showConfirm(
+        `구글 시트에서 ${rows.length}건을 불러옵니다.\n현재 로컬 데이터가 시트 데이터로 교체됩니다.`,
+        '📥 시트에서 불러오기', '불러오기', '취소', 'btn-primary'
+      );
+      if (!ok) return;
+    }
+    entries = rows;
     saveEntries();
     renderAll();
     setSyncState('synced');
     localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
     updateLastSyncLabel();
-    alert(`불러오기 완료: ${rows.length}건`);
+    showToast(`불러오기 완료: ${rows.length}건`, 'success');
 
   } catch(err) {
     console.error('Sheets load error:', err);
-    alert('구글 시트 불러오기 실패\n\n원인: ' + err.message);
+    showToast('구글 시트 불러오기 실패: ' + err.message, 'error', 5000);
   } finally {
     sheetsLoadBtn.disabled = false;
     sheetsLoadBtn.querySelector('span').textContent = '시트에서 불러오기';
@@ -1545,8 +1599,8 @@ sheetsSaveBtn.addEventListener('click', async () => {
 });
 
 // 연결 해제
-sheetsDisconnBtn.addEventListener('click', () => {
-  if (!confirm('구글 시트 연결을 해제할까요?')) return;
+sheetsDisconnBtn.addEventListener('click', async () => {
+  if (!await showConfirm('구글 시트 연결을 해제할까요?', '연결 해제', '해제', '취소', 'btn-danger')) return;
   sheetsUrl = '';
   localStorage.removeItem(SHEETS_URL_KEY);
   localStorage.removeItem(LAST_SYNC_KEY);
@@ -1563,6 +1617,237 @@ window.addEventListener('resize', () => {
 });
 
 /* ===== 초기 구동 ===== */
+/* ===== 수익 계산기 ===== */
+(function initCalculator() {
+  // 상태
+  let cFee = 0.0002, cPos = 'LONG', cLev = 1;
+  let cTab = 'profit', cTargetUnit = '%';
+
+  const backdrop = document.getElementById('calc-modal-backdrop');
+  const openBtn  = document.getElementById('open-calc-btn');
+  const closeBtn = document.getElementById('calc-modal-close');
+  const resetBtn = document.getElementById('calc-reset-btn');
+  const runBtn   = document.getElementById('calc-run-btn');
+  const applyBtn = document.getElementById('calc-apply-btn');
+
+  // 모달 열기/닫기
+  openBtn.addEventListener('click', () => {
+    backdrop.classList.add('is-open');
+    document.body.classList.add('modal-open');
+  });
+  closeBtn.addEventListener('click', closeCalc);
+  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeCalc(); });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && backdrop.classList.contains('is-open')) closeCalc();
+  });
+  function closeCalc() {
+    backdrop.classList.remove('is-open');
+    document.body.classList.remove('modal-open');
+  }
+
+  // 탭 전환
+  document.querySelectorAll('.calc-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      cTab = tab.dataset.tab;
+      document.querySelectorAll('.calc-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.calc-tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(`tab-${cTab}`).classList.add('active');
+      document.getElementById('profit-result').style.display = 'none';
+      document.getElementById('target-result').style.display = 'none';
+      applyBtn.style.display = 'none';
+    });
+  });
+
+  // 수수료 세그먼트
+  document.querySelectorAll('.seg[data-fee]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.seg[data-fee]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cFee = parseFloat(btn.dataset.fee);
+    });
+  });
+
+  // 포지션 세그먼트
+  document.querySelectorAll('.seg[data-pos]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.seg[data-pos]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cPos = btn.dataset.pos;
+    });
+  });
+
+  // 레버리지 버튼
+  document.querySelectorAll('.lev').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.lev').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cLev = parseInt(btn.dataset.lev);
+    });
+  });
+
+  // 목표단위 전환
+  const unitToggle = document.getElementById('target-unit-toggle');
+  const unitLabel  = document.getElementById('target-unit-label');
+  unitToggle.addEventListener('click', () => {
+    cTargetUnit = cTargetUnit === '%' ? 'USDT' : '%';
+    unitLabel.textContent    = cTargetUnit;
+    unitToggle.textContent   = cTargetUnit === '%' ? 'USDT로 전환' : '%로 전환';
+    document.getElementById('t-target').placeholder = cTargetUnit === '%' ? '예: 10' : '예: 500';
+  });
+
+  // 초기화
+  resetBtn.addEventListener('click', resetCalc);
+  function resetCalc() {
+    cFee = 0.0002; cPos = 'LONG'; cLev = 1; cTargetUnit = '%';
+    document.querySelectorAll('.seg[data-fee]').forEach((b,i) => b.classList.toggle('active', i===0));
+    document.querySelectorAll('.seg[data-pos]').forEach((b,i) => b.classList.toggle('active', i===0));
+    document.querySelectorAll('.lev').forEach((b,i) => b.classList.toggle('active', i===0));
+    ['c-open','c-close','c-qty','t-open','t-target'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    unitLabel.textContent  = '%';
+    unitToggle.textContent = 'USDT로 전환';
+    document.getElementById('profit-result').style.display = 'none';
+    document.getElementById('target-result').style.display = 'none';
+    applyBtn.style.display = 'none';
+  }
+
+  // 숫자 포맷
+  const fmtU = n => n.toFixed(2);
+  const fmtP = n => n.toFixed(4);
+  const sign  = n => n >= 0 ? '+' : '';
+  const cls   = n => n >= 0 ? 'color:var(--pnl-pos)' : 'color:var(--pnl-neg)';
+
+  // 계산
+  runBtn.addEventListener('click', () => {
+    if (cTab === 'profit') calcProfit();
+    else calcTarget();
+  });
+
+  function calcProfit() {
+    const open  = parseFloat(document.getElementById('c-open').value);
+    const close = parseFloat(document.getElementById('c-close').value);
+    const qty   = parseFloat(document.getElementById('c-qty').value);
+
+    if (isNaN(open) || isNaN(close) || isNaN(qty) || !open || !close || !qty) {
+      showToast('오픈 가격, 청산 가격, 수량을 모두 입력해주세요.', 'warning'); return;
+    }
+
+    // 1. 총수익
+    const gross = cPos === 'LONG' ? (close - open) * qty : (open - close) * qty;
+    // 2. 수수료
+    const entryFee = open  * qty * cFee;
+    const exitFee  = close * qty * cFee;
+    const totalFee = entryFee + exitFee;
+    // 3. 순수익
+    const net = gross - totalFee;
+    // 4. ROE
+    const margin = (open * qty) / cLev;
+    const roe    = (net / margin) * 100;
+    // 5. BEP
+    const bep = cPos === 'LONG'
+      ? open * (1 + cFee * 2)
+      : open * (1 - cFee * 2);
+    // 6. 강제청산가
+    const liq = cPos === 'LONG'
+      ? open * (1 - 1 / cLev)
+      : open * (1 + 1 / cLev);
+
+    // 결과 표시
+    document.getElementById('profit-formula').innerHTML =
+      `총수익 <b style="${cls(gross)}">${sign(gross)}${fmtU(gross)}</b> − 수수료 <b style="color:var(--pnl-neg)">-${fmtU(totalFee)}</b> = <b style="${cls(net)}">${sign(net)}${fmtU(net)} USDT</b>`;
+
+    const setVal = (id, val, style='') => {
+      const el = document.getElementById(id);
+      el.textContent = val;
+      if (style) el.style.cssText = style;
+    };
+    setVal('r-net',    `${sign(net)}${fmtU(net)} USDT`,    cls(net));
+    setVal('r-roe',    `${sign(roe)}${fmtU(roe)}%`,         cls(roe));
+    setVal('r-margin', `${fmtU(margin)} USDT`,             '');
+    setVal('r-bep',    `$${fmtP(bep)}`,                    '');
+    setVal('r-liq',    cLev === 1 ? '해당없음' : `$${fmtP(liq)}`, cLev > 1 ? 'color:var(--pnl-neg)' : '');
+    setVal('r-fee',    `-${fmtU(totalFee)} USDT`,          'color:var(--pnl-neg)');
+
+    document.getElementById('profit-result').style.display = 'block';
+    document.getElementById('profit-warning').style.display = cLev >= 20 ? 'block' : 'none';
+    applyBtn.style.display = '';
+
+    // 폼 적용 버튼 데이터 저장
+    applyBtn.dataset.open = open;
+    applyBtn.dataset.qty  = qty;
+  }
+
+  function calcTarget() {
+    const open   = parseFloat(document.getElementById('t-open').value);
+    const target = parseFloat(document.getElementById('t-target').value);
+
+    if (isNaN(open) || isNaN(target) || !open || target === 0) {
+      showToast('오픈 가격과 목표 수익을 입력해주세요.', 'warning'); return;
+    }
+
+    // % → 실제 목표수익률 계산
+    let targetPct;
+    if (cTargetUnit === '%') {
+      targetPct = target;
+    } else {
+      // USDT → % 역산 (증거금 기준)
+      const margin = (open * 1) / cLev; // 수량 1 기준 (비율 계산용)
+      targetPct = (target / margin) * 100;
+    }
+
+    // 청산가 역산
+    const price = cPos === 'LONG'
+      ? open * (1 + targetPct / cLev / 100 + cFee * 2)
+      : open * (1 - targetPct / cLev / 100 - cFee * 2);
+
+    // BEP / 강제청산가
+    const bep = cPos === 'LONG' ? open * (1 + cFee * 2) : open * (1 - cFee * 2);
+    const liq = cPos === 'LONG' ? open * (1 - 1 / cLev) : open * (1 + 1 / cLev);
+
+    // 수수료 비교 (수량 1 BTC 기준)
+    const makerFee = (open + price) * 1 * 0.0002;
+    const takerFee = (open + price) * 1 * 0.0005;
+
+    document.getElementById('t-r-price').textContent = `$${fmtP(price)}`;
+    document.getElementById('t-r-price').style.cssText = price > open
+      ? (cPos === 'LONG' ? 'color:var(--pnl-pos)' : 'color:var(--pnl-neg)')
+      : (cPos === 'LONG' ? 'color:var(--pnl-neg)' : 'color:var(--pnl-pos)');
+    document.getElementById('t-r-bep').textContent   = `$${fmtP(bep)}`;
+    document.getElementById('t-r-liq').textContent   = cLev === 1 ? '해당없음' : `$${fmtP(liq)}`;
+    document.getElementById('t-r-liq').style.cssText = cLev > 1 ? 'color:var(--pnl-neg)' : '';
+    document.getElementById('t-r-maker-fee').textContent = `${fmtU(makerFee)} USDT`;
+    document.getElementById('t-r-taker-fee').textContent = `${fmtU(takerFee)} USDT`;
+
+    document.getElementById('target-result').style.display = 'block';
+    document.getElementById('target-warning').style.display = cLev >= 20 ? 'block' : 'none';
+    applyBtn.style.display = '';
+    applyBtn.dataset.open = open;
+    applyBtn.dataset.qty  = '';
+  }
+
+  // 매매기록 폼에 적용
+  applyBtn.addEventListener('click', () => {
+    // 공통값
+    document.getElementById('side').value     = cPos;
+    document.getElementById('leverage').value = cLev;
+
+    // 진입가
+    const openVal = applyBtn.dataset.open;
+    if (openVal) document.getElementById('avgEntry').value = openVal;
+
+    // 수량 (수익탭에서만)
+    const qtyVal = applyBtn.dataset.qty;
+    if (qtyVal) document.getElementById('quantity').value = qtyVal;
+
+    // 계산기 닫고 폼으로 스크롤
+    closeCalc();
+    document.getElementById('avgEntry').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('계산기 값이 매매기록 폼에 적용됐습니다.', 'success');
+  });
+})();
+
 function boot() {
   initTheme();
   loadPrinciples();

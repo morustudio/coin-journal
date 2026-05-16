@@ -1003,3 +1003,132 @@ tr.drag-over td { border-top: 2px solid var(--accent); }
   .form-actions { flex-direction: column; }
   .form-actions .btn { width: 100%; justify-content: center; }
 }
+
+/* ===== 수익 계산기 버튼 ===== */
+.btn-calc {
+  width: 100%;
+  background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(59,130,246,0.08));
+  border: 1px solid rgba(245,158,11,0.3);
+  color: #fbbf24;
+  border-radius: var(--radius-sm);
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.18s;
+  justify-content: flex-start;
+}
+.btn-calc:hover { background: linear-gradient(135deg, rgba(245,158,11,0.2), rgba(59,130,246,0.12)); border-color: rgba(245,158,11,0.5); }
+.btn-calc-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: auto; }
+
+/* ===== 계산기 모달 ===== */
+.modal-calc { max-width: 680px; }
+.calc-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  position: sticky;
+  top: 57px;
+  z-index: 1;
+}
+.calc-tab {
+  flex: 1;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  font-family: var(--font-sans);
+}
+.calc-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.calc-tab:hover:not(.active) { color: var(--text); }
+.calc-body { padding: 16px; }
+.calc-section { margin-bottom: 14px; }
+.calc-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.calc-field { display: flex; flex-direction: column; gap: 5px; }
+.calc-field label { font-size: 11px; color: var(--text-label); font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.calc-tab-panel { display: none; }
+.calc-tab-panel.active { display: block; }
+
+/* 세그먼트 버튼 */
+.seg-group { display: flex; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--border); }
+.seg {
+  flex: 1; padding: 8px 6px; font-size: 12px; font-weight: 500;
+  background: var(--bg-input); border: none; color: var(--text-muted);
+  cursor: pointer; transition: all 0.15s; font-family: var(--font-sans);
+  min-height: 36px;
+}
+.seg.active { background: var(--accent); color: #fff; }
+.seg-long.active { background: var(--accent-green); }
+.seg-short.active { background: var(--accent-red); }
+
+/* 레버리지 버튼 */
+.lev-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.lev {
+  flex: 1; min-width: 44px; min-height: 36px;
+  padding: 6px 4px; font-size: 12px; font-weight: 600;
+  background: var(--bg-input); border: 1px solid var(--border);
+  color: var(--text-muted); cursor: pointer; transition: all 0.15s;
+  border-radius: var(--radius-sm); font-family: var(--font-mono);
+}
+.lev.active { background: rgba(245,158,11,0.15); border-color: #f59e0b; color: #fbbf24; }
+.lev:hover:not(.active) { border-color: var(--text-muted); color: var(--text); }
+
+/* 결과 */
+.calc-result { margin-top: 12px; padding: 14px; background: var(--bg-stat); border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.calc-result-formula { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); font-family: var(--font-mono); }
+.calc-result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.calc-stat { background: var(--bg-card); border-radius: var(--radius-sm); padding: 10px 12px; border: 1px solid var(--border); }
+.calc-stat-highlight { border-color: var(--accent); }
+.calc-stat-label { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+.calc-stat-value { font-size: 15px; font-weight: 700; font-family: var(--font-mono); color: var(--text); }
+.calc-warning { margin-top: 10px; padding: 8px 12px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: var(--radius-sm); font-size: 12px; color: #f87171; }
+.calc-fee-compare { margin-top: 10px; border-top: 1px solid var(--border); padding-top: 10px; }
+.calc-fee-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); padding: 3px 0; }
+.calc-fee-row span:last-child { font-family: var(--font-mono); color: var(--text); }
+.calc-actions { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.calc-disclaimer { font-size: 10px; color: var(--text-muted); }
+.link-btn { background: none; border: none; color: var(--accent); font-size: 10px; cursor: pointer; padding: 0; text-decoration: underline; font-family: var(--font-sans); }
+
+/* ===== 커스텀 토스트 ===== */
+#toast-container {
+  position: fixed; bottom: 24px; right: 24px;
+  z-index: 99999; display: flex; flex-direction: column;
+  gap: 8px; pointer-events: none;
+}
+.toast-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--bg-modal); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 12px 16px;
+  box-shadow: var(--shadow-modal); min-width: 260px; max-width: 360px;
+  pointer-events: all; animation: toastIn 0.25s ease;
+  font-size: 13px; color: var(--text);
+}
+.toast-item.toast-success { border-left: 3px solid var(--pnl-pos); }
+.toast-item.toast-error   { border-left: 3px solid var(--pnl-neg); }
+.toast-item.toast-warning { border-left: 3px solid #f59e0b; }
+.toast-item.toast-info    { border-left: 3px solid var(--accent); }
+.toast-icon { font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+.toast-msg  { flex: 1; line-height: 1.5; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(20px); }
+}
+
+@media (max-width: 768px) {
+  #toast-container { bottom: 16px; right: 12px; left: 12px; }
+  .toast-item { max-width: 100%; }
+  .btn-calc-sub { display: none; }
+  .calc-row { grid-template-columns: 1fr; }
+}
