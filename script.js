@@ -223,7 +223,6 @@ const principlesReset= document.getElementById('principles-reset-btn');
 const principlesStat = document.getElementById('principles-status');
 
 const startingCashEl = document.getElementById('startingCash');
-const saveCashBtn    = document.getElementById('save-cash-btn');
 
 const statEquity     = document.getElementById('stat-equity');
 const statTotalPnl   = document.getElementById('stat-totalpnl');
@@ -436,7 +435,9 @@ function saveSettings() {
   markPending();
   renderAll();
 }
-saveCashBtn.addEventListener('click', saveSettings);
+// 증거금 자동저장 — blur(포커스 이탈) 또는 Enter 키
+startingCashEl.addEventListener('blur',    saveSettings);
+startingCashEl.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); saveSettings(); startingCashEl.blur(); } });
 
 /* ===== 기록 저장/로드 ===== */
 function loadEntries() {
@@ -628,8 +629,8 @@ function renderTable() {
       const dateB = b.date || '';
       if (dateA !== dateB) return dateB.localeCompare(dateA) * (dir === 'desc' ? 1 : -1);
       // 같은 날짜: 최신 추가 순서 (내림차순) — 새 항목이 위로
-      const oA = a.order !== undefined ? a.order : a.createdAt;
-      const oB = b.order !== undefined ? b.order : b.createdAt;
+      const oA = Number(a.order !== undefined && a.order !== '' ? a.order : a.createdAt) || 0;
+      const oB = Number(b.order !== undefined && b.order !== '' ? b.order : b.createdAt) || 0;
       return (oB - oA);
     }
 
@@ -1292,8 +1293,19 @@ function setModalReadOnly(ro) {
 }
 
 document.getElementById('modal-close').addEventListener('click', closeModal);
-modalBackdrop.addEventListener('click', e => { if (e.target === modalBackdrop) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && modalBackdrop.classList.contains('is-open')) closeModal(); });
+modalBackdrop.addEventListener('click', e => {
+  if (e.target !== modalBackdrop) return;
+  // 수정 모드일 때는 바깥 클릭으로 닫히지 않음
+  const isEditing = document.getElementById('modal-save').style.display !== 'none';
+  if (isEditing) return;
+  closeModal();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && modalBackdrop.classList.contains('is-open')) {
+    const isEditing = document.getElementById('modal-save').style.display !== 'none';
+    if (!isEditing) closeModal();
+  }
+});
 
 document.getElementById('modal-edit').addEventListener('click', () => setModalReadOnly(false));
 document.getElementById('modal-cancel').addEventListener('click', () => { if (currentId !== null) openModal(currentId); });
@@ -1429,7 +1441,8 @@ function normalizeRows(items) {
     if (!id) id = Date.now() + idx;
     if (!createdAt) createdAt = Date.parse(date) || Date.now() + idx;
     return {
-      id: Number(id), createdAt: Number(createdAt),
+      id: Number(id) || Date.now() + idx,
+      createdAt: Number(createdAt) || Date.parse(String(date)) || Date.now() + idx,
       date: fmtDate(date), symbol: String(g(o,['symbol','종목'])||'BTC'),
       side: String(g(o,['side','포지션'])||'LONG'),
       leverage: String(g(o,['leverage','레버리지'])||'1'),
@@ -1442,7 +1455,7 @@ function normalizeRows(items) {
       reason: String(g(o,['reason','진입근거'])||''),
       exitReason: String(g(o,['exitReason','청산이유'])||''),
       lesson: String(g(o,['lesson','교훈','피드백'])||''),
-      order: o['order'] !== undefined ? Number(o['order']) : undefined,
+      order: (o['order'] !== undefined && o['order'] !== '') ? Number(o['order']) : undefined,
     };
   }).filter(Boolean); // ← 정렬 제거: renderTable에서 처리
 }
@@ -1760,7 +1773,7 @@ window.addEventListener('resize', () => {
     document.body.classList.add('modal-open');
   });
   closeBtn.addEventListener('click', closeCalc);
-  backdrop.addEventListener('click', e => { if (e.target === backdrop) closeCalc(); });
+  // 계산기 모달은 바깥 클릭으로 닫히지 않음 (계산 중 실수 방지)
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && backdrop.classList.contains('is-open')) closeCalc();
   });
