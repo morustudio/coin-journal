@@ -94,6 +94,7 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     'realizedPnl','pnl','pnlPercent',
     'reason','exitReason','lesson','createdAt','order'];
 
+  /* ── 매매 기록 저장 ── */
   if (data.action === 'save') {
     sheet.clearContents();
     sheet.appendRow(COLS);
@@ -105,6 +106,7 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     ).setMimeType(ContentService.MimeType.JSON);
   }
 
+  /* ── 매매 기록 불러오기 ── */
   if (data.action === 'load') {
     var rows = sheet.getDataRange().getValues();
     if (rows.length < 2) return ContentService.createTextOutput(
@@ -118,6 +120,78 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     });
     return ContentService.createTextOutput(
       JSON.stringify({status:'ok', entries: entries})
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  /* ── 설정 저장 (매매 원칙 + 시작 증거금) ── */
+  if (data.action === 'save_settings') {
+    var sSheet = ss.getSheetByName('설정') || ss.insertSheet('설정');
+    sSheet.clearContents();
+    sSheet.appendRow(['key', 'value', 'updatedAt']);
+    var now = new Date().toISOString();
+    sSheet.appendRow(['principles',   String(data.principles   || ''), now]);
+    sSheet.appendRow(['startingCash', String(data.startingCash || '0'), now]);
+    return ContentService.createTextOutput(
+      JSON.stringify({status:'ok'})
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  /* ── 설정 불러오기 ── */
+  if (data.action === 'load_settings') {
+    var sSheet = ss.getSheetByName('설정');
+    if (!sSheet) return ContentService.createTextOutput(
+      JSON.stringify({status:'ok', settings:{}})
+    ).setMimeType(ContentService.MimeType.JSON);
+    var rows = sSheet.getDataRange().getValues();
+    var settings = {};
+    rows.slice(1).forEach(function(r){ if (r[0]) settings[String(r[0])] = String(r[1]); });
+    return ContentService.createTextOutput(
+      JSON.stringify({status:'ok', settings: settings})
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  /* ── 전체 저장 (기록 + 설정 한번에) ── */
+  if (data.action === 'save_all') {
+    // 매매 기록
+    sheet.clearContents();
+    sheet.appendRow(COLS);
+    (data.entries || []).forEach(function(row) {
+      sheet.appendRow(COLS.map(function(h){ return row[h] !== undefined ? String(row[h]) : ''; }));
+    });
+    // 설정
+    var sSheet = ss.getSheetByName('설정') || ss.insertSheet('설정');
+    sSheet.clearContents();
+    sSheet.appendRow(['key', 'value', 'updatedAt']);
+    var now = new Date().toISOString();
+    sSheet.appendRow(['principles',   String(data.principles   || ''), now]);
+    sSheet.appendRow(['startingCash', String(data.startingCash || '0'), now]);
+    return ContentService.createTextOutput(
+      JSON.stringify({status:'ok', count: (data.entries||[]).length})
+    ).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  /* ── 전체 불러오기 (기록 + 설정 한번에) ── */
+  if (data.action === 'load_all') {
+    // 매매 기록
+    var rows = sheet.getDataRange().getValues();
+    var entries = [];
+    if (rows.length >= 2) {
+      var colHeaders = rows[0];
+      entries = rows.slice(1).map(function(r) {
+        var obj = {};
+        colHeaders.forEach(function(h,i){ obj[h] = r[i] !== undefined ? String(r[i]) : ''; });
+        return obj;
+      });
+    }
+    // 설정
+    var sSheet = ss.getSheetByName('설정');
+    var settings = {};
+    if (sSheet) {
+      var sRows = sSheet.getDataRange().getValues();
+      sRows.slice(1).forEach(function(r){ if (r[0]) settings[String(r[0])] = String(r[1]); });
+    }
+    return ContentService.createTextOutput(
+      JSON.stringify({status:'ok', entries: entries, settings: settings})
     ).setMimeType(ContentService.MimeType.JSON);
   }
 
@@ -323,6 +397,7 @@ function loadPrinciples() {
 function savePrinciples() {
   localStorage.setItem(PRINCIPLES_KEY, (principlesTA.value || '').trim());
   principlesStat.textContent = `저장됨: ${new Date().toLocaleString('ko-KR')}`;
+  markPending();
 }
 principlesSave.addEventListener('click', savePrinciples);
 principlesTA.addEventListener('blur', () => {
@@ -353,6 +428,7 @@ function saveSettings() {
   if (isNaN(val) || val < 0) { showToast('증거금은 0 이상 숫자여야 합니다.', 'warning'); return; }
   settings.startingCash = val;
   localStorage.setItem(SETTINGS_KEY, JSON.stringify({ startingCash: val }));
+  markPending();
   renderAll();
 }
 saveCashBtn.addEventListener('click', saveSettings);
@@ -1442,15 +1518,20 @@ async function syncToSheets() {
   setSyncState('loading');
   sheetsSyncBtn.disabled = true;
   try {
-    // Apps Script 웹앱은 POST 시 302 리다이렉트를 내려줌
-    // redirect: 'follow' + Content-Type 없이 보내야 CORS 오류 없이 동작
+    // 매매 기록 + 설정(원칙, 증거금) 한번에 저장
+    const principles  = localStorage.getItem(PRINCIPLES_KEY) || '';
+    const startingCash= settings.startingCash || 0;
+
     const res = await fetch(sheetsUrl, {
       method:   'POST',
       redirect: 'follow',
-      body:     JSON.stringify({ action: 'save', entries }),
+      body:     JSON.stringify({
+        action: 'save_all',
+        entries,
+        principles,
+        startingCash,
+      }),
     });
-
-    // Apps Script는 응답 본문이 텍스트이므로 text()로 먼저 받고 JSON 파싱
     const text = await res.text();
     let data;
     try { data = JSON.parse(text); }
@@ -1461,6 +1542,7 @@ async function syncToSheets() {
       const now = Date.now();
       localStorage.setItem(LAST_SYNC_KEY, String(now));
       updateLastSyncLabel();
+      showToast(`저장 완료: 매매기록 ${entries.length}건 + 설정`, 'success');
     } else {
       throw new Error(data.message || '저장 실패');
     }
@@ -1487,7 +1569,7 @@ async function loadFromSheets() {
     const res = await fetch(sheetsUrl, {
       method:   'POST',
       redirect: 'follow',
-      body:     JSON.stringify({ action: 'load' }),
+      body:     JSON.stringify({ action: 'load_all' }),
     });
     const text = await res.text();
     let data;
@@ -1496,27 +1578,62 @@ async function loadFromSheets() {
 
     if (data.status !== 'ok') throw new Error(data.message || '불러오기 실패');
 
-    const rows = normalizeRows(data.entries || []);
-    if (!rows.length) {
+    const rows     = normalizeRows(data.entries || []);
+    const sheetsSettings = data.settings || {};
+
+    // 매매 기록도 없고 설정도 없으면
+    if (!rows.length && !Object.keys(sheetsSettings).length) {
       showToast('구글 시트에 저장된 데이터가 없습니다.', 'warning');
       return;
     }
 
-    // 로컬 데이터 있을 때만 경고
-    if (entries.length > 0) {
+    // 로컬에 기존 데이터가 있을 때만 경고
+    const hasLocal = entries.length > 0
+      || (localStorage.getItem(PRINCIPLES_KEY) || '').trim()
+      || settings.startingCash !== 10000;
+
+    if (hasLocal) {
       const ok = await showConfirm(
-        `구글 시트에서 ${rows.length}건을 불러옵니다.\n현재 로컬 데이터가 시트 데이터로 교체됩니다.`,
+        `구글 시트에서 매매기록 ${rows.length}건 + 설정을 불러옵니다.\n현재 로컬 데이터가 시트 데이터로 교체됩니다.`,
         '📥 시트에서 불러오기', '불러오기', '취소', 'btn-primary'
       );
       if (!ok) return;
     }
-    entries = rows;
-    saveEntries();
+
+    // 매매 기록 적용
+    if (rows.length) {
+      entries = rows;
+      saveEntries();
+    }
+
+    // 설정 적용 (매매 원칙)
+    if (sheetsSettings.principles !== undefined) {
+      const p = sheetsSettings.principles;
+      localStorage.setItem(PRINCIPLES_KEY, p);
+      principlesTA.value = p;
+      principlesStat.textContent = p.trim()
+        ? `구글 시트에서 불러옴: ${new Date().toLocaleString('ko-KR')}`
+        : '저장된 매매 원칙이 없습니다.';
+    }
+
+    // 설정 적용 (시작 증거금)
+    if (sheetsSettings.startingCash !== undefined) {
+      const cash = parseFloat(sheetsSettings.startingCash) || 0;
+      settings.startingCash = cash;
+      startingCashEl.value  = cash;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ startingCash: cash }));
+    }
+
     renderAll();
     setSyncState('synced');
     localStorage.setItem(LAST_SYNC_KEY, String(Date.now()));
     updateLastSyncLabel();
-    showToast(`불러오기 완료: ${rows.length}건`, 'success');
+
+    const msgs = [];
+    if (rows.length)                          msgs.push(`매매기록 ${rows.length}건`);
+    if (sheetsSettings.principles !== undefined) msgs.push('매매 원칙');
+    if (sheetsSettings.startingCash !== undefined) msgs.push('시작 증거금');
+    showToast(`불러오기 완료: ${msgs.join(' · ')}`, 'success');
 
   } catch(err) {
     console.error('Sheets load error:', err);
