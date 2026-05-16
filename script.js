@@ -311,9 +311,12 @@ function fmtDate(raw) {
   const s = String(raw).trim();
   // 이미 YYYY-MM-DD 형식이면 그대로
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // Date 객체 문자열 등 다른 형식 파싱
+  // "2026-05-16 00:00:00" 또는 "2026-05-16T00:00:00" 형식 → 날짜만 추출
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[\sT]/);
+  if (m) return m[1];
+  // 기타 Date 파싱 가능한 형식
   const d = new Date(s);
-  if (isNaN(d.getTime())) return s; // 파싱 불가면 원본 반환
+  if (isNaN(d.getTime())) return s;
   const z = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
 }
@@ -628,10 +631,14 @@ function renderTable() {
       const dateA = a.date || '';
       const dateB = b.date || '';
       if (dateA !== dateB) return dateB.localeCompare(dateA) * (dir === 'desc' ? 1 : -1);
-      // 같은 날짜: 최신 추가 순서 (내림차순) — 새 항목이 위로
-      const oA = Number(a.order !== undefined && a.order !== '' ? a.order : a.createdAt) || 0;
-      const oB = Number(b.order !== undefined && b.order !== '' ? b.order : b.createdAt) || 0;
-      return (oB - oA);
+      // 같은 날짜: order가 둘 다 명시적으로 있을 때만 order 사용
+      // 하나라도 없으면 createdAt 내림차순 (최신이 위)
+      const hasOrderA = a.order !== undefined && a.order !== '' && a.order !== null;
+      const hasOrderB = b.order !== undefined && b.order !== '' && b.order !== null;
+      if (hasOrderA && hasOrderB) {
+        return Number(a.order) - Number(b.order); // order 오름차순 (드래그 순서)
+      }
+      return Number(b.createdAt) - Number(a.createdAt); // createdAt 내림차순 (최신이 위)
     }
 
     // 숫자 컬럼
@@ -861,12 +868,13 @@ document.querySelector('thead').addEventListener('click', e => {
 // DOM 순서를 entries의 order 필드에 반영 후 저장
 function applyNewOrder() {
   const rows = [...tableBody.querySelectorAll('tr')];
-  // 날짜별로 order 부여
+  // 드래그가 발생한 날짜 그룹만 order 부여
+  // 같은 날짜 그룹 내에서 화면 위쪽 = order 작은 값
   const dateOrderMap = {};
   rows.forEach(tr => {
     const date = tr.dataset.date;
     if (!dateOrderMap[date]) dateOrderMap[date] = 0;
-    const id = Number(tr.dataset.id);
+    const id    = Number(tr.dataset.id);
     const entry = entries.find(e => e.id === id);
     if (entry) entry.order = dateOrderMap[date]++;
   });
