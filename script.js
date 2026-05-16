@@ -381,9 +381,13 @@ function hookTextareas() {
     if (el.__autoResizeHooked) return;
     el.__autoResizeHooked = true;
     el.addEventListener('input', () => autoResizeTextarea(el));
-    // 초기값 있을 때 높이 맞추기
+    el.addEventListener('focus', () => autoResizeTextarea(el));
     if (el.value) autoResizeTextarea(el);
   });
+}
+// 코드로 value를 세팅한 후 높이 일괄 조정
+function resizeAllTextareas() {
+  document.querySelectorAll('textarea').forEach(el => autoResizeTextarea(el));
 }
 
 /* ===== 원칙 ===== */
@@ -391,6 +395,7 @@ function loadPrinciples() {
   const stored = localStorage.getItem(PRINCIPLES_KEY);
   if (stored !== null) {
     principlesTA.value = stored;
+    autoResizeTextarea(principlesTA);
     principlesStat.textContent = stored.trim() ? '마지막 저장된 매매 원칙을 불러왔습니다.' : '저장된 내용이 비어 있습니다.';
   }
 }
@@ -1267,6 +1272,7 @@ function openModal(id) {
   document.body.classList.add('modal-open');
   hookDatePickers();
   hookTextareas();
+  resizeAllTextareas();
 }
 
 function closeModal() {
@@ -1611,6 +1617,7 @@ async function loadFromSheets() {
       const p = sheetsSettings.principles;
       localStorage.setItem(PRINCIPLES_KEY, p);
       principlesTA.value = p;
+      autoResizeTextarea(principlesTA);
       principlesStat.textContent = p.trim()
         ? `구글 시트에서 불러옴: ${new Date().toLocaleString('ko-KR')}`
         : '저장된 매매 원칙이 없습니다.';
